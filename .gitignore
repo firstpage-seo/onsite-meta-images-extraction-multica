@@ -6,3 +6,4 @@ _sf_exports/
 *.seospider
 # generated deliverables
 Onsite Checklist - *.xlsx
+!template/*.xlsx

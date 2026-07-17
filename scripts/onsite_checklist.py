@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Crawl a site with Screaming Frog (headless CLI) and produce the FirstPage
-Onsite Checklist deliverable for items 17.x-20.x.
+Get crawl data from Screaming Frog and produce either the SEO or SEO/GEO
+FirstPage Onsite Checklist deliverable for items 17.1-20.2.
 
 Two phases, independently runnable:
   crawl  -> Screaming Frog CLI writes CSV exports to a folder
@@ -22,6 +22,8 @@ import subprocess
 import sys
 
 import openpyxl
+from openpyxl.cell.cell import MergedCell
+from openpyxl.utils import get_column_letter
 
 SF_BIN = "/Applications/Screaming Frog SEO Spider.app/Contents/MacOS/ScreamingFrogSEOSpiderLauncher"
 
@@ -215,9 +217,8 @@ def build_buckets(d):
     # genuinely captured no images (image crawling off, or JS rendering off on a JS-loaded
     # site) - flag 20.1/20.2 as UNKNOWN rather than report a false all-clear.
     #
-    # Separately: because Size comes from Images:All (internal only), 20.2 oversize can
-    # under-report when images are external-CDN. images_sizes_known says whether we had any
-    # size data to judge oversize against.
+    # images_sizes_known says whether All Image Inlinks supplied any byte sizes at all. If
+    # images exist but that export has no sizes, a zero oversize result is unknown, not clean.
     meta = {
         "images_crawled": bool(i_all or inlinks or alt_missing),
         "images_sizes_known": sizes_seen,
@@ -229,22 +230,58 @@ def build_buckets(d):
 
 s = lambda r, *k: ((col(r, *k) or "").strip() or None)
 
-# item -> (tab name, row-builder, column count)
+# Machine columns are refreshed from the crawl. Preserve columns contain human work that is
+# carried forward for persistent issues in Review mode. key_cols identify an issue across runs.
 TABS = {
-    "17.1": ("17.1 Page titles - Missing",    lambda r: [col(r, "Address")], 1),
-    "17.2": ("17.2 Page titles - Duplicate",  lambda r: [col(r, "Address"), s(r, "Title 1")], 2),
-    "17.3": ("17.3 Page Titles - Too Long",   lambda r: [col(r, "Address"), s(r, "Title 1"),
-                                                         int(num(col(r, "Title 1 Pixel Width")))], 3),
-    "17.4": ("17.4 Page Titles - Multiple",   lambda r: [col(r, "Address")], 1),
-    "18.1": ("18. Descriptions - Missing",    lambda r: [col(r, "Address")], 1),
-    "18.2": ("18.2 Descriptions - Duplicate", lambda r: [col(r, "Address"), s(r, "Meta Description 1")], 2),
-    "18.3": ("18.3 Descriptions - Too Long",  lambda r: [col(r, "Address"), s(r, "Meta Description 1"),
-                                                         int(num(col(r, "Meta Description 1 Pixel Width")))], 3),
-    "19.1": ("19.1 H1 - Missing",             lambda r: [col(r, "Address")], 1),
-    "19.2": ("19.2 H1 - Duplicate",           lambda r: [col(r, "Address"), s(r, "H1-1")], 2),
-    "19.3": ("19.3 H1 - Multiple",            lambda r: [col(r, "Address"), s(r, "H1-1"), s(r, "H1-2")], 3),
-    "20.1": ("20.1 Image - Alt Text Missing", lambda r: [col(r, "Source"), col(r, "Destination")], 2),
-    "20.2": ("20.2 Image - Oversize",         lambda r: [r["Source"], r["Destination"], r["Size (Bytes)"]], 3),
+    "17.1": {"tab": "17.1 Page titles - Missing",
+             "rowfn": lambda r: [col(r, "Address")], "machine_cols": 1,
+             "preserve_cols": (2, 3), "key_cols": (1,)},
+    "17.2": {"tab": "17.2 Page titles - Duplicate",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "Title 1")], "machine_cols": 2,
+             "preserve_cols": (3, 4), "key_cols": (1, 2)},
+    "17.3": {"tab": "17.3 Page Titles - Too Long",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "Title 1"),
+                                   int(num(col(r, "Title 1 Pixel Width")))], "machine_cols": 3,
+             "preserve_cols": (4,), "key_cols": (1,)},
+    "17.4": {"tab": "17.4 Page Titles - Multiple",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "Title 1"), s(r, "Title 2")],
+             "machine_cols": 3, "preserve_cols": (4,), "key_cols": (1,)},
+    "18.1": {"tab": "18. Descriptions - Missing",
+             "rowfn": lambda r: [col(r, "Address")], "machine_cols": 1,
+             "preserve_cols": (2,), "key_cols": (1,)},
+    "18.2": {"tab": "18.2 Descriptions - Duplicate",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "Meta Description 1")],
+             "machine_cols": 2, "preserve_cols": (), "key_cols": (1, 2)},
+    "18.3": {"tab": "18.3 Descriptions - Too Long",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "Meta Description 1"),
+                                   int(num(col(r, "Meta Description 1 Pixel Width")))],
+             "machine_cols": 3, "preserve_cols": (), "key_cols": (1,)},
+    "19.1": {"tab": "19.1 H1 - Missing",
+             "rowfn": lambda r: [col(r, "Address")], "machine_cols": 1,
+             "preserve_cols": (2,), "key_cols": (1,)},
+    "19.2": {"tab": "19.2 H1 - Duplicate",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "H1-1")], "machine_cols": 2,
+             "preserve_cols": (3,), "key_cols": (1, 2)},
+    "19.3": {"tab": "19.3 H1 - Multiple",
+             "rowfn": lambda r: [col(r, "Address"), s(r, "H1-1"), s(r, "H1-2")],
+             "machine_cols": 3, "preserve_cols": (), "key_cols": (1,)},
+    "20.1": {"tab": "20.1 Image - Alt Text Missing",
+             "rowfn": lambda r: [col(r, "Source"), col(r, "Destination")], "machine_cols": 2,
+             "preserve_cols": (3,), "key_cols": (1, 2)},
+    "20.2": {"tab": "20.2 Image - Oversize",
+             "rowfn": lambda r: [r["Source"], r["Destination"], r["Size (Bytes)"]],
+             "machine_cols": 3, "preserve_cols": (), "key_cols": (1, 2)},
+}
+
+PROFILES = {
+    "seo": {
+        "template": "Onsite Checklist - TEMPLATE - 2026.xlsx",
+        "output": "Onsite Checklist - {client} - {date}.xlsx",
+    },
+    "seo_geo": {
+        "template": "[Working Draft_Internal SEO_GEO] Onsite Checklist - [TEMPLATE] - 20260714.xlsx",
+        "output": "SEO_GEO Onsite Checklist - {client} - {date}.xlsx",
+    },
 }
 
 DATA_ROW = 4          # rows 1-2 metadata, row 3 headers, data from row 4
@@ -267,12 +304,66 @@ def find_check_rows(ws):
     return out
 
 
-def build(template, out_path, buckets, meta=None, blank_unverified=True):
+def _norm_key(value):
+    return str(value or "").strip()
+
+
+def _issue_key(values, key_cols):
+    return tuple(_norm_key(values[c - 1]) for c in key_cols)
+
+
+def _change_counts(previous, current):
+    old = collections.Counter(previous)
+    new = collections.Counter(current)
+    persistent = sum((old & new).values())
+    return {
+        "new": sum((new - old).values()),
+        "persistent": persistent,
+        "resolved": sum((old - new).values()),
+    }
+
+
+def _image_position(image):
+    """Return a loaded image's one-based anchor row/column when available."""
+    anchor = image.anchor
+    if isinstance(anchor, str):
+        cell = openpyxl.utils.cell.coordinate_from_string(anchor)
+        return cell[1], openpyxl.utils.cell.column_index_from_string(cell[0])
+    marker = getattr(anchor, "_from", None)
+    if marker is None:
+        return None
+    return marker.row + 1, marker.col + 1
+
+
+def _capture_cell(cell):
+    return cell.value, copy.copy(cell.hyperlink), copy.copy(cell.comment)
+
+
+def _restore_cell(cell, captured):
+    value, hyperlink, comment = captured
+    cell.value = value
+    cell.hyperlink = hyperlink
+    cell.comment = comment
+
+
+def detect_profile(workbook_path):
+    """Identify the template family from workbook structure, never its filename alone."""
+    wb = openpyxl.load_workbook(workbook_path, read_only=True, data_only=False)
+    sheets = set(wb.sheetnames)
+    wb.close()
+    required = {CHECK_TAB, *(spec["tab"] for spec in TABS.values())}
+    missing = sorted(required - sheets)
+    if missing:
+        sys.exit(f"Workbook is missing required sheets: {missing}")
+    return "seo_geo" if "20.3 Image - Next-gen" in sheets else "seo"
+
+
+def build(base_workbook, out_path, buckets, meta=None, mode="begin", blank_unverified=True):
     meta = meta or {}
-    shutil.copy(template, out_path)
+    shutil.copy(base_workbook, out_path)
     wb = openpyxl.load_workbook(out_path)
 
-    missing_tabs = [TABS[k][0] for k in TABS if TABS[k][0] not in wb.sheetnames]
+    missing_tabs = [TABS[k]["tab"] for k in TABS if TABS[k]["tab"] not in wb.sheetnames]
     if missing_tabs:
         sys.exit(f"Template is missing expected tabs: {missing_tabs}")
 
@@ -285,19 +376,76 @@ def build(template, out_path, buckets, meta=None, blank_unverified=True):
     # would claim a clean pass on checks nobody ran.
     if blank_unverified:
         for r in range(3, ws.max_row + 1):
-            if ws.cell(r, CHECK_COL).value in ("✔", "✖"):
+            if ws.cell(r, CHECK_COL).value in ("✔", "✖", "?"):
                 ws.cell(r, CHECK_COL).value = None
 
     results = []
-    for key, (tab, rowfn, ncols) in TABS.items():
+    changes = {}
+    for key, spec in TABS.items():
+        tab = spec["tab"]
+        rowfn = spec["rowfn"]
+        machine_cols = spec["machine_cols"]
+        preserve_cols = spec["preserve_cols"]
+        key_cols = spec["key_cols"]
         data = buckets.get(key, [])
         sheet = wb[tab]
-        style = [sheet.cell(DATA_ROW, c)._style for c in range(1, ncols + 1)]
+        max_col = max((sheet.max_column, machine_cols, *preserve_cols))
+        style = [copy.copy(sheet.cell(DATA_ROW, c)._style) for c in range(1, max_col + 1)]
+
+        previous_keys = []
+        row_images = collections.defaultdict(list)
+        data_images = []
+        for image in list(getattr(sheet, "_images", [])):
+            position = _image_position(image)
+            if position and position[0] >= DATA_ROW:
+                row_images[position[0]].append((position[1], image))
+                data_images.append(image)
+
+        carry_forward = collections.defaultdict(collections.deque)
+        for row in range(DATA_ROW, sheet.max_row + 1):
+            machine = [sheet.cell(row, c).value for c in range(1, machine_cols + 1)]
+            if not any(v not in (None, "") for v in machine):
+                continue
+            issue_key = _issue_key(machine, key_cols)
+            previous_keys.append(issue_key)
+            preserved_cells = tuple(_capture_cell(sheet.cell(row, c)) for c in preserve_cols)
+            carry_forward[issue_key].append((preserved_cells, row_images.get(row, [])))
+
+        if data_images:
+            sheet._images = [image for image in sheet._images if image not in data_images]
+
+        # Both modes replace the factual issue rows. Review mode first captured annotations
+        # above; Begin mode also clears any accidental example data in a blank template.
+        for row in sheet.iter_rows(min_row=DATA_ROW, max_row=sheet.max_row, max_col=max_col):
+            for cell in row:
+                if not isinstance(cell, MergedCell):
+                    cell.value = None
+                    cell.hyperlink = None
+                    cell.comment = None
+
+        current_keys = []
         for i, rec in enumerate(data):
-            for c, val in enumerate(rowfn(rec), start=1):
+            values = rowfn(rec)
+            issue_key = _issue_key(values, key_cols)
+            current_keys.append(issue_key)
+            for c, val in enumerate(values, start=1):
                 cell = sheet.cell(DATA_ROW + i, c)
                 cell.value = val
                 cell._style = copy.copy(style[c - 1])
+            if mode == "review" and carry_forward[issue_key]:
+                carried_cells, carried_images = carry_forward[issue_key].popleft()
+                for c, captured in zip(preserve_cols, carried_cells):
+                    cell = sheet.cell(DATA_ROW + i, c)
+                    _restore_cell(cell, captured)
+                    cell._style = copy.copy(style[c - 1])
+                for image_col, image in carried_images:
+                    image.anchor = f"{get_column_letter(image_col)}{DATA_ROW + i}"
+                    sheet.add_image(image)
+
+        if mode == "review":
+            changes[key] = _change_counts(previous_keys, current_keys)
+        if data:
+            sheet.sheet_state = "visible"
         # Image items can't be judged clean when the evidence isn't there:
         #   - no images captured at all -> both 20.1 and 20.2 unknown
         #   - images captured but no size data (external CDN) -> 20.2 can't confirm "no
@@ -310,31 +458,34 @@ def build(template, out_path, buckets, meta=None, blank_unverified=True):
             mark = "?"
         else:
             mark = "✖" if data else "✔"
-        ws.cell(rows[key], CHECK_COL).value = None if mark == "?" else mark
+        ws.cell(rows[key], CHECK_COL).value = mark
         results.append((key, tab, len(data), mark))
 
     wb.save(out_path)
-    return results
+    return results, changes
 
 
 # --------------------------------------------------------------------------- main
 
-def default_template():
-    """The template bundled with this skill, so callers need not know where it lives."""
+def default_template(checklist_type):
+    """Return the canonical bundled blank template for a checklist family."""
     d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "template")
-    found = sorted(glob.glob(os.path.join(d, "*.xlsx")))
-    return found[0] if found else os.path.join(d, "<no template bundled>")
+    return os.path.join(d, PROFILES[checklist_type]["template"])
 
 
 def main():
-    p = argparse.ArgumentParser(description="Onsite checklist extraction (items 17.x-20.x)")
+    p = argparse.ArgumentParser(description="Onsite checklist extraction (items 17.1-20.2)")
     p.add_argument("--url", help="Start URL to crawl in Spider mode")
     p.add_argument("--sitemap", help="Sitemap URL for route selection only. The local headless "
                                       "route cannot inject it into Crawl These Sitemaps; use a "
                                       "saved crawl or MCP for a full sitemap audit.")
     p.add_argument("--client", required=True, help="Client name, used in the output filename")
-    p.add_argument("--template", default=None,
-                   help="Blank checklist .xlsx template (default: the copy bundled with this skill)")
+    p.add_argument("--checklist-type", choices=sorted(PROFILES),
+                   help="Checklist family: seo or seo_geo. Auto-detected from an attached base workbook.")
+    p.add_argument("--mode", choices=("begin", "review"), default="begin",
+                   help="begin starts from a blank template; review updates a previous completed onsite")
+    p.add_argument("--template", help="Blank checklist .xlsx for Begin mode")
+    p.add_argument("--previous-workbook", help="Previous completed onsite .xlsx for Review mode")
     p.add_argument("--out-dir", default=".", help="Where to write the deliverable")
     p.add_argument("--config", help="Path to a .seospiderconfig (else SF defaults)")
     p.add_argument("--crawl-file", help="Export from a saved .dbseospider crawl instead of "
@@ -351,9 +502,24 @@ def main():
         p.error("the local headless route does not support sitemap audits. Use a saved crawl "
                 "configured with Crawl These Sitemaps, or use the Screaming Frog MCP route")
 
-    template = a.template or default_template()
-    if not os.path.exists(template):
-        sys.exit(f"Template not found: {template}")
+    if a.mode == "review" and not a.previous_workbook:
+        p.error("Review mode requires --previous-workbook")
+    if a.mode == "begin" and a.previous_workbook:
+        p.error("--previous-workbook is only valid in Review mode")
+    if a.mode == "review" and a.template:
+        p.error("Review mode uses --previous-workbook as its base; do not also pass --template")
+    if a.mode == "begin" and not (a.template or a.checklist_type):
+        p.error("Begin mode requires --checklist-type when --template is not supplied")
+
+    base_workbook = (a.previous_workbook if a.mode == "review"
+                     else a.template or default_template(a.checklist_type))
+    if not os.path.exists(base_workbook):
+        sys.exit(f"Base workbook not found: {base_workbook}")
+
+    detected_type = detect_profile(base_workbook)
+    if a.checklist_type and a.checklist_type != detected_type:
+        sys.exit(f"Checklist type mismatch: selected {a.checklist_type}, but the workbook is {detected_type}")
+    checklist_type = a.checklist_type or detected_type
 
     date = a.date or datetime.date.today().strftime("%Y%m%d")
 
@@ -367,14 +533,28 @@ def main():
 
     buckets, meta = build_buckets(exports)
     os.makedirs(os.path.abspath(a.out_dir), exist_ok=True)
-    out_path = os.path.join(os.path.abspath(a.out_dir), f"Onsite Checklist - {a.client} - {date}.xlsx")
-    results = build(template, out_path, buckets, meta, blank_unverified=not a.keep_template_ticks)
+    filename = PROFILES[checklist_type]["output"].format(client=a.client, date=date)
+    out_path = os.path.join(os.path.abspath(a.out_dir), filename)
+    if os.path.abspath(base_workbook) == os.path.abspath(out_path):
+        sys.exit("Refusing to overwrite the source workbook. Choose a different output name, "
+                 "date, or directory.")
+    results, changes = build(
+        base_workbook, out_path, buckets, meta, mode=a.mode,
+        blank_unverified=(a.mode == "begin" and not a.keep_template_ticks),
+    )
 
     print()
     print(f"{'ITEM':<36}{'ROWS':>6}   MARK")
     print("-" * 52)
     for key, tab, n, mark in results:
         print(f"{tab:<36}{n:>6}   {mark}")
+    if a.mode == "review":
+        print()
+        print(f"{'ITEM':<8}{'NEW':>6}{'PERSIST':>10}{'RESOLVED':>10}")
+        print("-" * 34)
+        for key in TABS:
+            delta = changes[key]
+            print(f"{key:<8}{delta['new']:>6}{delta['persistent']:>10}{delta['resolved']:>10}")
     print()
     print("WROTE:", out_path)
     print(f"thresholds: title>{TITLE_PX}px  desc>{DESC_PX}px  image>{IMG_KB}kB")

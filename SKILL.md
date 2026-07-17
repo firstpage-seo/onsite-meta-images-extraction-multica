@@ -1,17 +1,55 @@
 ---
 name: onsite-meta-images-extraction-multica
-description: Uses Screaming Frog through a saved crawl, local headless CLI, Multica MCP connection, or existing CSV exports, then fills the meta tags + images portion of the FirstPage Onsite Checklist - items 17.x-20.x (page titles, meta descriptions, H1s, image alt text, oversized images). Use this skill whenever the user gives a site URL, sitemap, saved Screaming Frog crawl, or export folder and asks for a meta tag audit or checklist tabs 17, 18, 19, or 20. Covers ONLY items 17.x-20.x.
+description: Builds or refreshes the meta tags + images portion of either the FirstPage SEO or SEO/GEO Onsite Checklist. Supports Begin Onsite from a blank template and Review Onsite on top of a previous completed workbook, using Screaming Frog saved crawls, MCP, local CLI, or existing exports. Covers only items 17.1-20.2.
 ---
 
-# Meta Tags + Images Extraction (Onsite Checklist items 17.x-20.x)
+# Meta Tags + Images Extraction (Onsite Checklist items 17.1-20.2)
 
 Gets crawl data from Screaming Frog, applies FirstPage house thresholds, and writes a checklist
 `.xlsx` in the standard tab format with `✔`/`✖` marks on the `SEO Implementation Checklist`
 tab. In Multica, Screaming Frog MCP is an optional way to obtain the crawl exports; it does not
 replace the validated Python extraction and workbook logic.
 
-**Scope: items 17.x-20.x only.** Everything else on the checklist is out of scope and is
-left blank for a separate skill or a human.
+**Scope: items 17.1-20.2 only.** SEO/GEO item 20.3 is deliberately not audited. Everything else
+is out of scope and is left unverified or preserved from the previous onsite.
+
+---
+
+## Mandatory intake and confirmation
+
+Do not call MCP, inspect saved crawls, start Screaming Frog, reuse exports, or generate a
+workbook until the user has answered these questions in the current task:
+
+1. **Checklist family:** SEO or SEO/GEO?
+2. **Audit mode:** Begin Onsite or Review Onsite?
+3. **Base workbook:**
+   - Begin: the matching blank template.
+   - Review: the previous completed onsite workbook.
+4. **Current crawl source:** saved crawl, MCP URL+sitemap crawl, local website-only crawl, or
+   approved existing exports.
+5. **Client name and output destination.**
+
+Never infer the website, sitemap, workbook, or crawl from a project name, previous task, MCP
+database, or files found in the environment. After collecting the inputs, state the checklist
+family, audit mode, crawl route, source workbook, output filename, and overwrite status. Wait
+for explicit confirmation before starting. In a task UI, leave the task awaiting input.
+
+Validate the workbook structurally. SEO/GEO contains `20.3 Image - Next-gen`; SEO does not. A
+declared family that disagrees with the workbook must hard-fail.
+
+## Audit modes
+
+**Begin Onsite.** Start from the selected blank SEO or SEO/GEO template. Clear template ticks
+on unverified items, populate items 17.1-20.2, and leave SEO/GEO item 20.3 blank.
+
+**Review Onsite.** Start from the previous completed onsite, never a blank template. Replace the
+factual rows in items 17.1-20.2 with current findings while preserving all unrelated sheets and
+checklist marks. Carry forward human-written `New Title`, `Revised Title`, `Instructions`,
+`Remarks`, and screenshot references for persistent issues. Remove resolved rows, add new rows,
+and unhide any managed tab that now has issues. Do not automatically hide a tab that becomes
+clean. Never overwrite the previous workbook.
+
+Review output includes per-item counts for new, persistent, and resolved rows.
 
 ---
 
@@ -47,7 +85,7 @@ List-mode crawl. Nothing appears on screen. The crawl is saved to SF's database 
 folder, run the Python script with `--exports-dir`. This performs no crawl and is also the route
 used after MCP has produced the exports.
 
-## Picking a route — infer, don't interrogate
+## Picking a crawl route
 
 Take what the user already gave you:
 
@@ -61,24 +99,17 @@ Take what the user already gave you:
   headless crawl, not a full sitemap audit.
 - They gave nothing -> ask whether they have a saved crawl, and if not, ask for the URL/sitemap.
 
-Do not present both routes as a menu when the answer is already implied. Ask only for what is
-genuinely missing.
+Route selection never replaces the mandatory checklist-family and audit-mode questions.
 
-## Inputs
+## Workbook inputs and names
 
-1. **A saved `.dbseospider` or `.seospider` crawl file** (route A), **start URL + sitemap URL** (route B), **start URL**
-   (route C), or **CSV export
-   folder** (route D)
-2. **Client name** — used in the output filename (required)
-3. **Output folder** — where the .xlsx goes (defaults to the current directory)
-4. **Config path** (optional for route C; route B may configure the crawl through MCP)
+In Multica, binary `.xlsx` files may be omitted from URL-imported skills. Accept the blank or
+previous workbook as a task attachment when necessary.
 
-The template defaults to the copy bundled in this skill's `template/` folder. Only pass
-`--template` to override it.
+- SEO output: `Onsite Checklist - <client> - <date>.xlsx`
+- SEO/GEO output: `SEO_GEO Onsite Checklist - <client> - <date>.xlsx`
 
-**Warn before overwriting.** The output filename is `Onsite Checklist - <client> - <date>.xlsx`.
-A second run on the same day for the same client silently replaces the first. Check whether the
-file exists and say so.
+Warn before overwriting. Review mode must never overwrite its previous workbook.
 
 ---
 
@@ -89,7 +120,8 @@ file exists and say so.
   working licensed Screaming Frog installation or service.
 - Screaming Frog does **not** need to be open — the script launches its own headless instance,
   which runs fine alongside a GUI window.
-- `openpyxl` must be installed (`pip3 install openpyxl`).
+- Python dependencies must be installed (`pip3 install -r requirements.txt`). `Pillow` is
+  required to preserve embedded screenshots during Review mode.
 - **Route C is macOS only.** The local Screaming Frog binary path is hardcoded. Routes B and D
   are not tied to that binary path.
 
@@ -166,20 +198,39 @@ After the MCP export finishes:
 
 ## Running it
 
-**Route A — from a saved crawl (preferred):**
+Every command needs a checklist family and mode, either explicitly or through a structurally
+detectable attached workbook.
+
+**Begin SEO from a saved crawl:**
 ```bash
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --crawl-file "/path/to/client-crawl.dbseospider" \
   --client "clientname" \
+  --checklist-type seo \
+  --mode begin \
+  --template "/path/to/blank-seo-template.xlsx" \
   --out-dir "/path/to/client/03_reports"
 ```
-Seconds, not minutes — no crawling.
+
+**Review SEO/GEO from a saved crawl:**
+```bash
+python3 <skill-directory>/scripts/onsite_checklist.py \
+  --crawl-file "/path/to/client-crawl.dbseospider" \
+  --client "clientname" \
+  --checklist-type seo_geo \
+  --mode review \
+  --previous-workbook "/path/to/previous-onsite.xlsx" \
+  --out-dir "/path/to/client/03_reports"
+```
 
 **Route B — after MCP crawl/export:**
 ```bash
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --exports-dir "/absolute/path/to/mcp-csv-exports" \
   --client "clientname" \
+  --checklist-type seo_geo \
+  --mode begin \
+  --template "/path/to/attached-template.xlsx" \
   --out-dir "/absolute/path/to/reports"
 ```
 
@@ -188,6 +239,9 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --url "https://example.com/" \
   --client "clientname" \
+  --checklist-type seo \
+  --mode begin \
+  --template "/path/to/blank-template.xlsx" \
   --config "/path/to/house.seospiderconfig" \
   --out-dir "/path/to/client/03_reports"
 ```
@@ -206,6 +260,9 @@ Useful flags:
   when iterating on output format so you don't wait on a crawl each time.
 - `--date YYYYMMDD` — override the filename date.
 - `--keep-template-ticks` — leave the template's default `✔` on unverified items (default is to blank them).
+- `--checklist-type seo|seo_geo` — validate and select the checklist family.
+- `--mode begin|review` — select a blank-template build or previous-workbook refresh.
+- `--previous-workbook <file>` — required for Review mode.
 
 After it runs, **read the output file back and verify** the counts match what the script
 reported. Report the per-item table to the user.
@@ -303,12 +360,15 @@ rather than reporting it as passed.
 - Column layouts vary per tab — the script's `TABS` map holds them.
 - 17.2 / 18.2 / 19.2 group duplicates together, biggest group first. 17.3 / 18.3 sort by pixel
   width descending.
-- Leave `New Title`, `Revised Title`, `Instructions`, `Remarks` **blank** — that's optimisation
-  work, not extraction.
+- Begin mode leaves `New Title`, `Revised Title`, `Instructions`, `Remarks`, and screenshot
+  references blank. Review mode carries them forward only for persistent issues.
 - `SEO Implementation Checklist` column D: `✔` = no issue, `✖` = issue found. Located by column B
   value at runtime, not hardcoded, because rows shift as the template gains items.
-- **The template ships `✔` pre-filled on every item.** The script blanks all of them, then marks
-  only the 12 it verified. Otherwise the file claims a clean pass on checks nobody ran.
+- Begin mode blanks template ticks, then marks only the 12 verified items. Review mode changes
+  only those 12 marks and preserves every unrelated checklist result.
+- SEO/GEO item 20.3 remains blank in Begin mode and unchanged in Review mode.
+- A managed tab with current issues is always made visible. Clean tabs are not automatically
+  hidden.
 - Empty tab + `✔` is the correct output for an item with no issues.
 
 ---
@@ -337,4 +397,5 @@ Give the per-item table (item, rows, mark), then flag:
 
 - Anything where rows are concentrated in few unique assets (see *Rows are not issues*).
 - Standouts worth naming — e.g. an 18.2 MB image, or a title at 1111 px against a 580 budget.
-- That the other ~47 checklist items are deliberately blank and still need doing.
+- For Review, the per-item new/persistent/resolved table.
+- That only items 17.1-20.2 were verified; SEO/GEO item 20.3 remains unverified.

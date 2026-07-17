@@ -1,15 +1,31 @@
 # onsite-meta-images-extraction-multica
 
-Fills the **meta tags + images** part of the Onsite Checklist (items 17.x–20.x) from Screaming
-Frog data and writes the `.xlsx`. This Multica edition supports four input routes:
+Fills or refreshes the **meta tags + images** part of the SEO or SEO/GEO Onsite Checklist
+(items 17.1–20.2) from Screaming Frog data. It supports:
+
+- **Begin Onsite:** build from the matching blank template.
+- **Review Onsite:** update a previous completed onsite while preserving unrelated work and
+  human annotations on persistent issues.
+
+Four crawl input routes are available:
 
 1. A saved Screaming Frog crawl (`.dbseospider` preferred; `.seospider` also accepted).
 2. A crawl/export through a connected Screaming Frog MCP server.
 3. A local background crawl through the Screaming Frog CLI.
 4. An existing folder of Screaming Frog CSV exports.
 
-Scope is 17.x–20.x **only** — page titles, meta descriptions, H1s, image alt text, oversized
-images. The other ~47 checklist items are left blank.
+SEO/GEO item 20.3 is deliberately unverified.
+
+## Required opening questions
+
+Before execution, ask and confirm:
+
+1. SEO or SEO/GEO?
+2. Begin Onsite or Review Onsite?
+3. Blank template attachment for Begin, or previous completed workbook for Review.
+4. Current crawl source, client name, and output destination.
+
+See `MULTICA_AGENT_INSTRUCTIONS.md` for ready-to-paste agent-level instructions.
 
 ---
 
@@ -37,12 +53,12 @@ the same validated audit and workbook rules as the other routes.
 
 ## Local prerequisites
 
-**Screaming Frog, licensed.** Headless mode does not work on the free version. Nothing here
-works without it.
+**Screaming Frog, licensed.** Required for saved-crawl, MCP, and local crawl routes. Existing
+CSV exports can be processed without launching Screaming Frog.
 
-**Python + openpyxl:**
+**Python dependencies:**
 ```bash
-pip3 install openpyxl
+pip3 install -r requirements.txt
 ```
 
 The direct CLI route is macOS-only because the Screaming Frog path is hardcoded. MCP and
@@ -69,10 +85,17 @@ Or directly:
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --crawl-file ~/clients/xyz/01_source/xyz.dbseospider \
   --client "xyz" \
+  --checklist-type seo \
+  --mode begin \
+  --template /path/to/blank-template.xlsx \
   --out-dir ~/clients/xyz/03_reports
 ```
 
-The template is bundled in `template/`, so you don't need to supply one.
+For Review, replace `--mode begin --template ...` with:
+
+```text
+--mode review --previous-workbook /path/to/previous-onsite.xlsx
+```
 
 ---
 
@@ -89,6 +112,9 @@ After MCP writes the required CSV reports, run:
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --exports-dir "/absolute/path/to/sf-exports" \
   --client "xyz" \
+  --checklist-type seo_geo \
+  --mode begin \
+  --template "/path/to/attached-template.xlsx" \
   --out-dir "/absolute/path/to/reports"
 ```
 
@@ -101,7 +127,11 @@ website-only crawl and does not claim to perform a full sitemap audit.
 ```bash
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --url "https://xyz.com/" \
-  --client "xyz" --config /path/to/your.seospiderconfig \
+  --client "xyz" \
+  --checklist-type seo \
+  --mode begin \
+  --template "/path/to/attached-template.xlsx" \
+  --config /path/to/your.seospiderconfig \
   --out-dir ~/clients/xyz/03_reports
 ```
 
@@ -130,6 +160,9 @@ When complete Screaming Frog CSV exports already exist, run:
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --exports-dir "/absolute/path/to/sf-exports" \
   --client "xyz" \
+  --checklist-type seo \
+  --mode review \
+  --previous-workbook "/path/to/previous-onsite.xlsx" \
   --out-dir "/absolute/path/to/reports"
 ```
 
@@ -142,8 +175,9 @@ is not sufficient because the checklist relies on Screaming Frog's native filter
 
 Fills the factual columns: Address, Title, Pixel Width, Source, Destination, Size.
 
-Leaves `New Title`, `Revised Title`, `Instructions` and `Remarks` **blank** — that's the
-optimisation work, and it's yours.
+Begin leaves `New Title`, `Revised Title`, `Instructions` and `Remarks` blank. Review preserves
+those fields for persistent issues, removes resolved rows, adds current issues, and unhides tabs
+that now contain issues.
 
 **Rows are not issues.** On cheersmaid, 30 alt-text rows turned out to be 2 unique images
 repeated across 16 pages. Check unique assets before telling a client they have 30 fixes.
