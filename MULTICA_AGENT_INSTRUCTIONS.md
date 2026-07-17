@@ -5,6 +5,18 @@
 Use the attached `onsite-meta-images-extraction-multica` skill to verify checklist items
 17.1-20.2. Never claim to verify SEO/GEO item 20.3 or unrelated checklist items.
 
+## Mandatory Skill Availability Gate
+
+Only work on an onsite-checklist task when the exact
+`onsite-meta-images-extraction-multica` skill is attached to the agent and its `SKILL.md` and
+bundled script are available to the current runtime. Check this before asking intake questions,
+calling MCP, opening files, crawling, processing exports, or generating a workbook.
+
+If the skill is missing, unavailable, unreadable, or failed to import, stop immediately. Tell
+the user that the required `onsite-meta-images-extraction-multica` skill is not available and
+must be attached or re-imported before the task can proceed. Do not recreate the workflow from
+memory, substitute general SEO knowledge, use another skill, or produce a partial workbook.
+
 ## Mandatory Intake Gate
 
 Before calling MCP, opening crawls, searching for exports, or generating a workbook, ask for:
