@@ -4,8 +4,8 @@ Fills or refreshes the **meta tags + images** part of the SEO or SEO/GEO Onsite 
 (items 17.1–20.2) from Screaming Frog data. It supports:
 
 - **Begin Onsite:** build from the matching blank template.
-- **Review Onsite:** update a previous completed onsite while preserving unrelated work and
-  human annotations on persistent issues.
+- **Review Onsite:** either update a previous completed onsite while preserving prior work, or
+  start the review from a freshly downloaded blank template.
 
 Four crawl input routes are available:
 
@@ -22,7 +22,7 @@ Before execution, ask and confirm:
 
 1. SEO or SEO/GEO?
 2. Begin Onsite or Review Onsite?
-3. Canonical GitHub template for Begin, or previous completed workbook for Review.
+3. For Review: start from the previous completed workbook or a blank template?
 4. Current crawl source, client name, and output destination.
 
 See `MULTICA_AGENT_INSTRUCTIONS.md` for ready-to-paste agent-level instructions.
@@ -66,9 +66,10 @@ existing-export processing are not tied to that application path.
 
 ## Templates in Multica
 
-Multica may omit binary `.xlsx` files when it imports this skill from GitHub. Begin mode no
-longer depends on those files being included in the imported skill: after SEO or SEO/GEO is
-selected, the script downloads the matching canonical template directly from this repository.
+Multica may omit binary `.xlsx` files when it imports this skill from GitHub. Begin mode and
+Review from blank no longer depend on those files being included in the imported skill: after
+SEO or SEO/GEO is selected, the script downloads the matching canonical template directly from
+this repository.
 
 The download is restricted to HTTPS links under
 `firstpage-seo/onsite-meta-images-extraction-multica`, capped at 5 MB, checked for an XLSX ZIP
@@ -77,7 +78,7 @@ against the selected checklist family before it is used.
 
 An attached local template remains supported with `--template` and takes precedence. An
 alternative version in the approved repository can be supplied with `--template-url`. Review
-mode never downloads a blank template; it requires the previous completed onsite workbook.
+from a previous onsite still requires that completed workbook and never overwrites it.
 
 ---
 
@@ -105,10 +106,16 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --out-dir ~/clients/xyz/03_reports
 ```
 
-For Review, replace `--mode begin` with:
+For Review from a previous onsite, replace `--mode begin` with:
 
 ```text
---mode review --previous-workbook /path/to/previous-onsite.xlsx
+--mode review --review-base previous --previous-workbook /path/to/previous-onsite.xlsx
+```
+
+For Review from a blank template, replace `--mode begin` with:
+
+```text
+--mode review --review-base blank
 ```
 
 ---
@@ -174,6 +181,7 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "xyz" \
   --checklist-type seo \
   --mode review \
+  --review-base previous \
   --previous-workbook "/path/to/previous-onsite.xlsx" \
   --out-dir "/absolute/path/to/reports"
 ```
@@ -187,9 +195,9 @@ is not sufficient because the checklist relies on Screaming Frog's native filter
 
 Fills the factual columns: Address, Title, Pixel Width, Source, Destination, Size.
 
-Begin leaves `New Title`, `Revised Title`, `Instructions` and `Remarks` blank. Review preserves
-those fields for persistent issues, removes resolved rows, adds current issues, and unhides tabs
-that now contain issues.
+Begin and Review from blank leave `New Title`, `Revised Title`, `Instructions` and `Remarks`
+blank. Review from a previous onsite preserves those fields for persistent issues, removes
+resolved rows, adds current issues, and unhides tabs that now contain issues.
 
 **Rows are not issues.** On cheersmaid, 30 alt-text rows turned out to be 2 unique images
 repeated across 16 pages. Check unique assets before telling a client they have 30 fixes.

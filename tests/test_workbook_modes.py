@@ -1,6 +1,9 @@
+import contextlib
+import csv
 import importlib.util
 import io
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -95,6 +98,58 @@ class WorkbookModesTest(unittest.TestCase):
                 onsite.download_template(
                     onsite.PROFILES["seo"]["url"], "seo", self.tmp.name,
                 )
+
+    def test_review_from_blank_resolves_template_without_history(self):
+        exports = self.path("exports")
+        os.makedirs(exports)
+        with open(os.path.join(exports, "page_titles_all.csv"), "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(
+                fh, fieldnames=["Address", "Indexability", "Title 1 Pixel Width"],
+            )
+            writer.writeheader()
+            writer.writerow({
+                "Address": "https://example.com/",
+                "Indexability": "Indexable",
+                "Title 1 Pixel Width": "100",
+            })
+
+        argv = [
+            SCRIPT,
+            "--exports-dir", exports,
+            "--client", "Fresh Review",
+            "--checklist-type", "seo",
+            "--mode", "review",
+            "--review-base", "blank",
+            "--date", "20260717",
+            "--out-dir", self.tmp.name,
+        ]
+        output = io.StringIO()
+        with mock.patch.object(onsite, "resolve_blank_template", return_value=self.seo) as resolver:
+            with mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(output):
+                onsite.main()
+
+        resolver.assert_called_once()
+        self.assertIn("historical new/persistent/resolved counts are not available", output.getvalue())
+        workbook = self.path("Onsite Checklist - Fresh Review - 20260717.xlsx")
+        self.assertEqual(onsite.detect_profile(workbook), "seo")
+        wb = openpyxl.load_workbook(workbook)
+        checklist = wb[onsite.CHECK_TAB]
+        self.assertIsNone(checklist.cell(checklist_row(checklist, "10.1"), onsite.CHECK_COL).value)
+
+    def test_review_from_blank_rejects_previous_workbook(self):
+        argv = [
+            SCRIPT,
+            "--exports-dir", self.path("unused-exports"),
+            "--client", "Invalid Review",
+            "--checklist-type", "seo",
+            "--mode", "review",
+            "--review-base", "blank",
+            "--previous-workbook", self.seo,
+        ]
+        with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                onsite.main()
+        self.assertEqual(raised.exception.code, 2)
 
     def test_review_merges_rows_and_preserves_human_work(self):
         previous_buckets = empty_buckets()

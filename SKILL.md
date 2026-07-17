@@ -1,6 +1,6 @@
 ---
 name: onsite-meta-images-extraction-multica
-description: Builds or refreshes the meta tags + images portion of either the FirstPage SEO or SEO/GEO Onsite Checklist. Supports Begin Onsite from a blank template and Review Onsite on top of a previous completed workbook, using Screaming Frog saved crawls, MCP, local CLI, or existing exports. Covers only items 17.1-20.2.
+description: Builds or refreshes the meta tags + images portion of either the FirstPage SEO or SEO/GEO Onsite Checklist. Supports Begin Onsite from a blank template and Review Onsite from either a previous completed workbook or a fresh blank template, using Screaming Frog saved crawls, MCP, local CLI, or existing exports. Covers only items 17.1-20.2.
 ---
 
 # Meta Tags + Images Extraction (Onsite Checklist items 17.1-20.2)
@@ -25,7 +25,9 @@ workbook until the user has answered these questions in the current task:
 3. **Base workbook:**
    - Begin: the skill downloads the matching canonical blank template from the approved GitHub
      repository. An attached local template or approved GitHub file URL may override it.
-   - Review: the previous completed onsite workbook must be supplied.
+   - Review: ask whether to start from the previous completed onsite or a blank template.
+   - Review from previous: the previous completed onsite workbook must be supplied.
+   - Review from blank: download the matching canonical template as for Begin.
 4. **Current crawl source:** saved crawl, MCP URL+sitemap crawl, local website-only crawl, or
    approved existing exports.
 5. **Client name and output destination.**
@@ -45,14 +47,19 @@ the canonical template for the selected family from this skill's approved public
 repository. Clear template ticks on unverified items, populate items 17.1-20.2, and leave
 SEO/GEO item 20.3 blank.
 
-**Review Onsite.** Start from the previous completed onsite, never a blank template. Replace the
-factual rows in items 17.1-20.2 with current findings while preserving all unrelated sheets and
-checklist marks. Carry forward human-written `New Title`, `Revised Title`, `Instructions`,
-`Remarks`, and screenshot references for persistent issues. Remove resolved rows, add new rows,
-and unhide any managed tab that now has issues. Do not automatically hide a tab that becomes
-clean. Never overwrite the previous workbook.
+**Review Onsite.** Ask for its starting point. When starting from the previous completed onsite,
+replace the factual rows in items 17.1-20.2 with current findings while preserving all unrelated
+sheets and checklist marks. Carry forward human-written `New Title`, `Revised Title`,
+`Instructions`, `Remarks`, and screenshot references for persistent issues. Remove resolved
+rows, add new rows, and unhide any managed tab that now has issues. Do not automatically hide a
+tab that becomes clean. Never overwrite the previous workbook.
 
-Review output includes per-item counts for new, persistent, and resolved rows.
+When the user chooses Review from blank, download the selected family's canonical template,
+clear template ticks on unverified items, and build a fresh workbook. Do not claim historical
+new, persistent, or resolved comparisons because no previous onsite was supplied.
+
+Review output includes per-item counts for new, persistent, and resolved rows only when it starts
+from a previous onsite.
 
 ---
 
@@ -106,11 +113,12 @@ Route selection never replaces the mandatory checklist-family and audit-mode que
 
 ## Workbook inputs and names
 
-In Multica, binary `.xlsx` files may be omitted from URL-imported skills. Begin mode handles
-this automatically: once the user selects SEO or SEO/GEO, the script downloads that family's
-canonical blank template from the public `firstpage-seo/onsite-meta-images-extraction-multica`
-repository. Do not ask the user to attach a blank template unless the download is unavailable
-or they explicitly want a different approved version.
+In Multica, binary `.xlsx` files may be omitted from URL-imported skills. Begin mode and Review
+from blank handle this automatically: once the user selects SEO or SEO/GEO, the script downloads
+that family's canonical blank template from the public
+`firstpage-seo/onsite-meta-images-extraction-multica` repository. Do not ask the user to attach a
+blank template unless the download is unavailable or they explicitly want a different approved
+version.
 
 The downloader accepts GitHub `blob` links and raw GitHub links, but only over HTTPS and only
 from the approved organization and repository. It limits the file size, checks the XLSX ZIP
@@ -118,13 +126,14 @@ signature, verifies the canonical file checksum, and then validates the workbook
 declared checklist family. A local `--template` takes precedence over any URL. An explicit
 `--template-url` may select another template version in the same approved repository.
 
-Review mode is different: the user must attach or otherwise provide the previous completed
-onsite workbook. Never replace it with a downloaded blank template.
+Review from previous requires the user to attach or otherwise provide the previous completed
+onsite workbook. Review from blank uses the downloader. Never switch between those choices
+without explicit user confirmation.
 
 - SEO output: `Onsite Checklist - <client> - <date>.xlsx`
 - SEO/GEO output: `SEO_GEO Onsite Checklist - <client> - <date>.xlsx`
 
-Warn before overwriting. Review mode must never overwrite its previous workbook.
+Warn before overwriting. Review from previous must never overwrite its source workbook.
 
 ---
 
@@ -136,7 +145,7 @@ Warn before overwriting. Review mode must never overwrite its previous workbook.
 - Screaming Frog does **not** need to be open — the script launches its own headless instance,
   which runs fine alongside a GUI window.
 - Python dependencies must be installed (`pip3 install -r requirements.txt`). `Pillow` is
-  required to preserve embedded screenshots during Review mode.
+  required to preserve embedded screenshots during Review from previous.
 - **Route C is macOS only.** The local Screaming Frog binary path is hardcoded. Routes B and D
   are not tied to that binary path.
 
@@ -226,21 +235,34 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --out-dir "/path/to/client/03_reports"
 ```
 
-With no `--template`, Begin mode downloads the canonical template for `--checklist-type`.
+With no `--template`, Begin and blank-template Review download the canonical template for
+`--checklist-type`.
 To use an approved alternative version, add either `--template "/path/to/template.xlsx"` or:
 
 ```bash
 --template-url "https://github.com/firstpage-seo/onsite-meta-images-extraction-multica/blob/main/template/Onsite%20Checklist%20-%20TEMPLATE%20-%202026.xlsx"
 ```
 
-**Review SEO/GEO from a saved crawl:**
+**Review SEO/GEO from a previous onsite and saved crawl:**
 ```bash
 python3 <skill-directory>/scripts/onsite_checklist.py \
   --crawl-file "/path/to/client-crawl.dbseospider" \
   --client "clientname" \
   --checklist-type seo_geo \
   --mode review \
+  --review-base previous \
   --previous-workbook "/path/to/previous-onsite.xlsx" \
+  --out-dir "/path/to/client/03_reports"
+```
+
+**Review SEO/GEO from blank and a saved crawl:**
+```bash
+python3 <skill-directory>/scripts/onsite_checklist.py \
+  --crawl-file "/path/to/client-crawl.dbseospider" \
+  --client "clientname" \
+  --checklist-type seo_geo \
+  --mode review \
+  --review-base blank \
   --out-dir "/path/to/client/03_reports"
 ```
 
@@ -280,10 +302,13 @@ Useful flags:
 - `--date YYYYMMDD` — override the filename date.
 - `--keep-template-ticks` — leave the template's default `✔` on unverified items (default is to blank them).
 - `--checklist-type seo|seo_geo` — validate and select the checklist family.
-- `--mode begin|review` — select a blank-template build or previous-workbook refresh.
-- `--template <file>` — optional local Begin template; takes precedence over URL download.
-- `--template-url <url>` — optional Begin template override in the approved GitHub repository.
-- `--previous-workbook <file>` — required for Review mode.
+- `--mode begin|review` — select Begin or Review Onsite.
+- `--review-base previous|blank` — select the Review starting point. Required for blank Review;
+  inferred as `previous` when `--previous-workbook` is supplied for compatibility.
+- `--template <file>` — optional local template for Begin or blank Review; takes precedence over
+  URL download.
+- `--template-url <url>` — optional blank-template override in the approved GitHub repository.
+- `--previous-workbook <file>` — required for Review from previous.
 
 After it runs, **read the output file back and verify** the counts match what the script
 reported. Report the per-item table to the user.
@@ -381,13 +406,16 @@ rather than reporting it as passed.
 - Column layouts vary per tab — the script's `TABS` map holds them.
 - 17.2 / 18.2 / 19.2 group duplicates together, biggest group first. 17.3 / 18.3 sort by pixel
   width descending.
-- Begin mode leaves `New Title`, `Revised Title`, `Instructions`, `Remarks`, and screenshot
-  references blank. Review mode carries them forward only for persistent issues.
+- Begin and blank-template Review leave `New Title`, `Revised Title`, `Instructions`, `Remarks`,
+  and screenshot references blank. Review from previous carries them forward only for persistent
+  issues.
 - `SEO Implementation Checklist` column D: `✔` = no issue, `✖` = issue found. Located by column B
   value at runtime, not hardcoded, because rows shift as the template gains items.
-- Begin mode blanks template ticks, then marks only the 12 verified items. Review mode changes
-  only those 12 marks and preserves every unrelated checklist result.
-- SEO/GEO item 20.3 remains blank in Begin mode and unchanged in Review mode.
+- Begin and blank-template Review blank template ticks, then mark only the 12 verified items.
+  Review from previous changes only those 12 marks and preserves every unrelated checklist
+  result.
+- SEO/GEO item 20.3 remains blank in Begin and blank-template Review, and stays unchanged in
+  Review from previous.
 - A managed tab with current issues is always made visible. Clean tabs are not automatically
   hidden.
 - Empty tab + `✔` is the correct output for an item with no issues.
@@ -418,5 +446,6 @@ Give the per-item table (item, rows, mark), then flag:
 
 - Anything where rows are concentrated in few unique assets (see *Rows are not issues*).
 - Standouts worth naming — e.g. an 18.2 MB image, or a title at 1111 px against a 580 budget.
-- For Review, the per-item new/persistent/resolved table.
+- For Review from previous, the per-item new/persistent/resolved table. For Review from blank,
+  state that historical comparison is unavailable.
 - That only items 17.1-20.2 were verified; SEO/GEO item 20.3 remains unverified.

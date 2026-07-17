@@ -442,7 +442,7 @@ def download_template(url, checklist_type, output_dir, expected_sha256=None):
     return path
 
 
-def resolve_begin_template(local_path, template_url, checklist_type, output_dir):
+def resolve_blank_template(local_path, template_url, checklist_type, output_dir):
     if local_path:
         return local_path
     source = template_url or PROFILES[checklist_type]["url"]
@@ -580,9 +580,11 @@ def main():
     p.add_argument("--checklist-type", choices=sorted(PROFILES),
                    help="Checklist family: seo or seo_geo. Auto-detected from an attached base workbook.")
     p.add_argument("--mode", choices=("begin", "review"), default="begin",
-                   help="begin starts from a blank template; review updates a previous completed onsite")
-    p.add_argument("--template", help="Blank checklist .xlsx for Begin mode")
-    p.add_argument("--template-url", help="Approved FirstPage GitHub template URL for Begin mode")
+                   help="begin starts from a blank template; review uses a previous onsite or blank template")
+    p.add_argument("--review-base", choices=("previous", "blank"),
+                   help="Review starting point: previous onsite or a fresh blank template")
+    p.add_argument("--template", help="Blank checklist .xlsx for Begin or blank-template Review")
+    p.add_argument("--template-url", help="Approved FirstPage GitHub template URL for a blank workbook")
     p.add_argument("--previous-workbook", help="Previous completed onsite .xlsx for Review mode")
     p.add_argument("--out-dir", default=".", help="Where to write the deliverable")
     p.add_argument("--config", help="Path to a .seospiderconfig (else SF defaults)")
@@ -600,25 +602,36 @@ def main():
         p.error("the local headless route does not support sitemap audits. Use a saved crawl "
                 "configured with Crawl These Sitemaps, or use the Screaming Frog MCP route")
 
-    if a.mode == "review" and not a.previous_workbook:
-        p.error("Review mode requires --previous-workbook")
+    if a.mode == "begin" and a.review_base:
+        p.error("--review-base is only valid in Review mode")
     if a.mode == "begin" and a.previous_workbook:
         p.error("--previous-workbook is only valid in Review mode")
-    if a.mode == "review" and a.template:
-        p.error("Review mode uses --previous-workbook as its base; do not also pass --template")
-    if a.mode == "review" and a.template_url:
-        p.error("Review mode uses --previous-workbook; a blank --template-url is not valid")
-    if a.mode == "begin" and not (a.template or a.checklist_type):
-        p.error("Begin mode requires --checklist-type when --template is not supplied")
+
+    review_base = None
+    if a.mode == "review":
+        review_base = a.review_base or ("previous" if a.previous_workbook else None)
+        if not review_base:
+            p.error("Review mode requires --previous-workbook, or --review-base blank to start fresh")
+        if review_base == "previous":
+            if not a.previous_workbook:
+                p.error("Review with --review-base previous requires --previous-workbook")
+            if a.template or a.template_url:
+                p.error("Review from a previous onsite cannot also use --template or --template-url")
+        elif a.previous_workbook:
+            p.error("Review with --review-base blank cannot also use --previous-workbook")
+
+    uses_blank_template = a.mode == "begin" or review_base == "blank"
+    if uses_blank_template and not (a.template or a.checklist_type):
+        p.error("A blank-template run requires --checklist-type when --template is not supplied")
 
     template_tmp = None
-    if a.mode == "review":
+    if a.mode == "review" and review_base == "previous":
         base_workbook = a.previous_workbook
     elif a.template:
         base_workbook = a.template
     else:
         template_tmp = tempfile.TemporaryDirectory(prefix="onsite-template-")
-        base_workbook = resolve_begin_template(
+        base_workbook = resolve_blank_template(
             None, a.template_url, a.checklist_type, template_tmp.name,
         )
     if not os.path.exists(base_workbook):
@@ -646,9 +659,10 @@ def main():
     if os.path.abspath(base_workbook) == os.path.abspath(out_path):
         sys.exit("Refusing to overwrite the source workbook. Choose a different output name, "
                  "date, or directory.")
+    build_mode = "review" if a.mode == "review" and review_base == "previous" else "begin"
     results, changes = build(
-        base_workbook, out_path, buckets, meta, mode=a.mode,
-        blank_unverified=(a.mode == "begin" and not a.keep_template_ticks),
+        base_workbook, out_path, buckets, meta, mode=build_mode,
+        blank_unverified=(uses_blank_template and not a.keep_template_ticks),
     )
 
     print()
@@ -656,13 +670,17 @@ def main():
     print("-" * 52)
     for key, tab, n, mark in results:
         print(f"{tab:<36}{n:>6}   {mark}")
-    if a.mode == "review":
+    if build_mode == "review":
         print()
         print(f"{'ITEM':<8}{'NEW':>6}{'PERSIST':>10}{'RESOLVED':>10}")
         print("-" * 34)
         for key in TABS:
             delta = changes[key]
             print(f"{key:<8}{delta['new']:>6}{delta['persistent']:>10}{delta['resolved']:>10}")
+    elif a.mode == "review":
+        print()
+        print("Review started from a blank template; historical new/persistent/resolved "
+              "counts are not available.")
     print()
     print("WROTE:", out_path)
     print(f"thresholds: title>{TITLE_PX}px  desc>{DESC_PX}px  image>{IMG_KB}kB")
