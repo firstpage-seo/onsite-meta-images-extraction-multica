@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import openpyxl
 from openpyxl.comments import Comment
@@ -47,6 +49,52 @@ class WorkbookModesTest(unittest.TestCase):
     def test_detects_both_template_profiles(self):
         self.assertEqual(onsite.detect_profile(self.seo), "seo")
         self.assertEqual(onsite.detect_profile(self.geo), "seo_geo")
+
+    def test_normalizes_approved_github_file_url(self):
+        page = (
+            "https://github.com/firstpage-seo/onsite-meta-images-extraction-multica/"
+            "blob/main/template/Onsite%20Checklist%20-%20TEMPLATE%20-%202026.xlsx?raw=1"
+        )
+        self.assertEqual(onsite.normalize_template_url(page), onsite.PROFILES["seo"]["url"])
+        with self.assertRaises(ValueError):
+            onsite.normalize_template_url("https://github.com/another/repo/blob/main/template.xlsx")
+        with self.assertRaises(ValueError):
+            onsite.normalize_template_url("http://github.com/firstpage-seo/onsite-meta-images-extraction-multica/blob/main/template.xlsx")
+
+    def test_downloads_and_validates_canonical_template_offline(self):
+        with open(self.seo, "rb") as fh:
+            payload = fh.read()
+
+        class Response(io.BytesIO):
+            def __init__(self, data):
+                super().__init__(data)
+                self.headers = {"Content-Length": str(len(data))}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+
+        with mock.patch.object(onsite.urllib.request, "urlopen", return_value=Response(payload)):
+            downloaded = onsite.download_template(
+                onsite.PROFILES["seo"]["url"], "seo", self.tmp.name,
+                expected_sha256=onsite.PROFILES["seo"]["sha256"],
+            )
+        self.assertEqual(onsite.detect_profile(downloaded), "seo")
+
+        with mock.patch.object(onsite.urllib.request, "urlopen", return_value=Response(payload)):
+            with self.assertRaisesRegex(SystemExit, "checksum"):
+                onsite.download_template(
+                    onsite.PROFILES["seo"]["url"], "seo", self.tmp.name,
+                    expected_sha256="0" * 64,
+                )
+
+        with mock.patch.object(onsite.urllib.request, "urlopen", return_value=Response(b"not xlsx")):
+            with self.assertRaisesRegex(SystemExit, "ZIP signature"):
+                onsite.download_template(
+                    onsite.PROFILES["seo"]["url"], "seo", self.tmp.name,
+                )
 
     def test_review_merges_rows_and_preserves_human_work(self):
         previous_buckets = empty_buckets()

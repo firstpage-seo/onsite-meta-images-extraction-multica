@@ -16,10 +16,15 @@ import copy
 import csv
 import datetime
 import glob
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import openpyxl
 from openpyxl.cell.cell import MergedCell
@@ -277,12 +282,20 @@ PROFILES = {
     "seo": {
         "template": "Onsite Checklist - TEMPLATE - 2026.xlsx",
         "output": "Onsite Checklist - {client} - {date}.xlsx",
+        "url": "https://raw.githubusercontent.com/firstpage-seo/onsite-meta-images-extraction-multica/main/template/Onsite%20Checklist%20-%20TEMPLATE%20-%202026.xlsx",
+        "sha256": "69a5a6b0fb78602cbbf98093379d4d4fe0906c31eecb5f33f567d9e668eb4cd6",
     },
     "seo_geo": {
         "template": "[Working Draft_Internal SEO_GEO] Onsite Checklist - [TEMPLATE] - 20260714.xlsx",
         "output": "SEO_GEO Onsite Checklist - {client} - {date}.xlsx",
+        "url": "https://raw.githubusercontent.com/firstpage-seo/onsite-meta-images-extraction-multica/main/template/%5BWorking%20Draft_Internal%20SEO_GEO%5D%20Onsite%20Checklist%20-%20%5BTEMPLATE%5D%20-%2020260714.xlsx",
+        "sha256": "4efcf9f3a6ea08b423e192f727049cf07a86649bb30659df1c10905d5d68ce12",
     },
 }
+
+APPROVED_GITHUB_OWNER = "firstpage-seo"
+APPROVED_GITHUB_REPO = "onsite-meta-images-extraction-multica"
+MAX_TEMPLATE_BYTES = 5 * 1024 * 1024
 
 DATA_ROW = 4          # rows 1-2 metadata, row 3 headers, data from row 4
 CHECK_TAB = "SEO Implementation Checklist"
@@ -348,7 +361,10 @@ def _restore_cell(cell, captured):
 
 def detect_profile(workbook_path):
     """Identify the template family from workbook structure, never its filename alone."""
-    wb = openpyxl.load_workbook(workbook_path, read_only=True, data_only=False)
+    try:
+        wb = openpyxl.load_workbook(workbook_path, read_only=True, data_only=False)
+    except Exception as exc:
+        sys.exit(f"Could not open base workbook as XLSX: {exc}")
     sheets = set(wb.sheetnames)
     wb.close()
     required = {CHECK_TAB, *(spec["tab"] for spec in TABS.values())}
@@ -356,6 +372,87 @@ def detect_profile(workbook_path):
     if missing:
         sys.exit(f"Workbook is missing required sheets: {missing}")
     return "seo_geo" if "20.3 Image - Next-gen" in sheets else "seo"
+
+
+def normalize_template_url(url):
+    """Convert an approved GitHub file page to its raw URL and reject other repositories."""
+    parsed = urllib.parse.urlsplit(url.strip())
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Template URL must use HTTPS")
+
+    host = (parsed.hostname or "").lower()
+    parts = [part for part in parsed.path.split("/") if part]
+    owner_repo = [APPROVED_GITHUB_OWNER, APPROVED_GITHUB_REPO]
+
+    if host == "github.com":
+        if len(parts) < 5 or parts[:2] != owner_repo or parts[2] != "blob":
+            raise ValueError("Template URL must point to a file in the approved FirstPage repository")
+        ref = parts[3]
+        file_path = urllib.parse.quote(urllib.parse.unquote("/".join(parts[4:])), safe="/")
+        return f"https://raw.githubusercontent.com/{owner_repo[0]}/{owner_repo[1]}/{ref}/{file_path}"
+
+    if host == "raw.githubusercontent.com":
+        if len(parts) < 4 or parts[:2] != owner_repo:
+            raise ValueError("Template URL must point to the approved FirstPage repository")
+        raw_path = urllib.parse.quote(urllib.parse.unquote("/".join(parts)), safe="/")
+        return urllib.parse.urlunsplit(("https", host, "/" + raw_path, "", ""))
+
+    raise ValueError("Template URL host must be github.com or raw.githubusercontent.com")
+
+
+def download_template(url, checklist_type, output_dir, expected_sha256=None):
+    """Download and validate an approved template into a temporary task directory."""
+    try:
+        raw_url = normalize_template_url(url)
+    except ValueError as exc:
+        sys.exit(f"Invalid template URL: {exc}")
+
+    request = urllib.request.Request(raw_url, headers={"User-Agent": "FirstPage-Onsite-Skill/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            length = response.headers.get("Content-Length")
+            if length and int(length) > MAX_TEMPLATE_BYTES:
+                sys.exit(f"Template download exceeds {MAX_TEMPLATE_BYTES // (1024 * 1024)} MB")
+            chunks = []
+            total = 0
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_TEMPLATE_BYTES:
+                    sys.exit(f"Template download exceeds {MAX_TEMPLATE_BYTES // (1024 * 1024)} MB")
+                chunks.append(chunk)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        sys.exit(f"Could not download template: {exc}")
+
+    payload = b"".join(chunks)
+    if not payload.startswith(b"PK"):
+        sys.exit("Downloaded template is not an XLSX file (ZIP signature missing)")
+
+    digest = hashlib.sha256(payload).hexdigest()
+    if expected_sha256 and digest != expected_sha256:
+        sys.exit("Downloaded template checksum does not match the approved version")
+
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, PROFILES[checklist_type]["template"])
+    with open(path, "wb") as fh:
+        fh.write(payload)
+    print(f"[template] downloaded {checklist_type} <- {raw_url}")
+    return path
+
+
+def resolve_begin_template(local_path, template_url, checklist_type, output_dir):
+    if local_path:
+        return local_path
+    source = template_url or PROFILES[checklist_type]["url"]
+    try:
+        canonical = normalize_template_url(PROFILES[checklist_type]["url"])
+        supplied = normalize_template_url(source)
+    except ValueError as exc:
+        sys.exit(f"Invalid template URL: {exc}")
+    expected = PROFILES[checklist_type]["sha256"] if supplied == canonical else None
+    return download_template(source, checklist_type, output_dir, expected_sha256=expected)
 
 
 def build(base_workbook, out_path, buckets, meta=None, mode="begin", blank_unverified=True):
@@ -485,6 +582,7 @@ def main():
     p.add_argument("--mode", choices=("begin", "review"), default="begin",
                    help="begin starts from a blank template; review updates a previous completed onsite")
     p.add_argument("--template", help="Blank checklist .xlsx for Begin mode")
+    p.add_argument("--template-url", help="Approved FirstPage GitHub template URL for Begin mode")
     p.add_argument("--previous-workbook", help="Previous completed onsite .xlsx for Review mode")
     p.add_argument("--out-dir", default=".", help="Where to write the deliverable")
     p.add_argument("--config", help="Path to a .seospiderconfig (else SF defaults)")
@@ -508,11 +606,21 @@ def main():
         p.error("--previous-workbook is only valid in Review mode")
     if a.mode == "review" and a.template:
         p.error("Review mode uses --previous-workbook as its base; do not also pass --template")
+    if a.mode == "review" and a.template_url:
+        p.error("Review mode uses --previous-workbook; a blank --template-url is not valid")
     if a.mode == "begin" and not (a.template or a.checklist_type):
         p.error("Begin mode requires --checklist-type when --template is not supplied")
 
-    base_workbook = (a.previous_workbook if a.mode == "review"
-                     else a.template or default_template(a.checklist_type))
+    template_tmp = None
+    if a.mode == "review":
+        base_workbook = a.previous_workbook
+    elif a.template:
+        base_workbook = a.template
+    else:
+        template_tmp = tempfile.TemporaryDirectory(prefix="onsite-template-")
+        base_workbook = resolve_begin_template(
+            None, a.template_url, a.checklist_type, template_tmp.name,
+        )
     if not os.path.exists(base_workbook):
         sys.exit(f"Base workbook not found: {base_workbook}")
 
@@ -574,6 +682,8 @@ def main():
               "   but 20.2 (oversize) can't be judged and is marked '?'. To size external "
               "images, enable\n"
               "   'Check Images' / external resource crawling and re-crawl.")
+    if template_tmp:
+        template_tmp.cleanup()
 
 
 if __name__ == "__main__":

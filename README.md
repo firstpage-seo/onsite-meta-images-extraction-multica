@@ -22,7 +22,7 @@ Before execution, ask and confirm:
 
 1. SEO or SEO/GEO?
 2. Begin Onsite or Review Onsite?
-3. Blank template attachment for Begin, or previous completed workbook for Review.
+3. Canonical GitHub template for Begin, or previous completed workbook for Review.
 4. Current crawl source, client name, and output destination.
 
 See `MULTICA_AGENT_INSTRUCTIONS.md` for ready-to-paste agent-level instructions.
@@ -64,6 +64,21 @@ pip3 install -r requirements.txt
 The direct CLI route is macOS-only because the Screaming Frog path is hardcoded. MCP and
 existing-export processing are not tied to that application path.
 
+## Templates in Multica
+
+Multica may omit binary `.xlsx` files when it imports this skill from GitHub. Begin mode no
+longer depends on those files being included in the imported skill: after SEO or SEO/GEO is
+selected, the script downloads the matching canonical template directly from this repository.
+
+The download is restricted to HTTPS links under
+`firstpage-seo/onsite-meta-images-extraction-multica`, capped at 5 MB, checked for an XLSX ZIP
+signature, and checksum-verified for the canonical templates. The workbook is also checked
+against the selected checklist family before it is used.
+
+An attached local template remains supported with `--template` and takes precedence. An
+alternative version in the approved repository can be supplied with `--template-url`. Review
+mode never downloads a blank template; it requires the previous completed onsite workbook.
+
 ---
 
 ## Route A: Recommended saved crawl
@@ -87,11 +102,10 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "xyz" \
   --checklist-type seo \
   --mode begin \
-  --template /path/to/blank-template.xlsx \
   --out-dir ~/clients/xyz/03_reports
 ```
 
-For Review, replace `--mode begin --template ...` with:
+For Review, replace `--mode begin` with:
 
 ```text
 --mode review --previous-workbook /path/to/previous-onsite.xlsx
@@ -114,7 +128,6 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "xyz" \
   --checklist-type seo_geo \
   --mode begin \
-  --template "/path/to/attached-template.xlsx" \
   --out-dir "/absolute/path/to/reports"
 ```
 
@@ -130,7 +143,6 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "xyz" \
   --checklist-type seo \
   --mode begin \
-  --template "/path/to/attached-template.xlsx" \
   --config /path/to/your.seospiderconfig \
   --out-dir ~/clients/xyz/03_reports
 ```

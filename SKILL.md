@@ -23,8 +23,9 @@ workbook until the user has answered these questions in the current task:
 1. **Checklist family:** SEO or SEO/GEO?
 2. **Audit mode:** Begin Onsite or Review Onsite?
 3. **Base workbook:**
-   - Begin: the matching blank template.
-   - Review: the previous completed onsite workbook.
+   - Begin: the skill downloads the matching canonical blank template from the approved GitHub
+     repository. An attached local template or approved GitHub file URL may override it.
+   - Review: the previous completed onsite workbook must be supplied.
 4. **Current crawl source:** saved crawl, MCP URL+sitemap crawl, local website-only crawl, or
    approved existing exports.
 5. **Client name and output destination.**
@@ -39,8 +40,10 @@ declared family that disagrees with the workbook must hard-fail.
 
 ## Audit modes
 
-**Begin Onsite.** Start from the selected blank SEO or SEO/GEO template. Clear template ticks
-on unverified items, populate items 17.1-20.2, and leave SEO/GEO item 20.3 blank.
+**Begin Onsite.** Start from the selected blank SEO or SEO/GEO template. By default, download
+the canonical template for the selected family from this skill's approved public GitHub
+repository. Clear template ticks on unverified items, populate items 17.1-20.2, and leave
+SEO/GEO item 20.3 blank.
 
 **Review Onsite.** Start from the previous completed onsite, never a blank template. Replace the
 factual rows in items 17.1-20.2 with current findings while preserving all unrelated sheets and
@@ -103,8 +106,20 @@ Route selection never replaces the mandatory checklist-family and audit-mode que
 
 ## Workbook inputs and names
 
-In Multica, binary `.xlsx` files may be omitted from URL-imported skills. Accept the blank or
-previous workbook as a task attachment when necessary.
+In Multica, binary `.xlsx` files may be omitted from URL-imported skills. Begin mode handles
+this automatically: once the user selects SEO or SEO/GEO, the script downloads that family's
+canonical blank template from the public `firstpage-seo/onsite-meta-images-extraction-multica`
+repository. Do not ask the user to attach a blank template unless the download is unavailable
+or they explicitly want a different approved version.
+
+The downloader accepts GitHub `blob` links and raw GitHub links, but only over HTTPS and only
+from the approved organization and repository. It limits the file size, checks the XLSX ZIP
+signature, verifies the canonical file checksum, and then validates the workbook structure and
+declared checklist family. A local `--template` takes precedence over any URL. An explicit
+`--template-url` may select another template version in the same approved repository.
+
+Review mode is different: the user must attach or otherwise provide the previous completed
+onsite workbook. Never replace it with a downloaded blank template.
 
 - SEO output: `Onsite Checklist - <client> - <date>.xlsx`
 - SEO/GEO output: `SEO_GEO Onsite Checklist - <client> - <date>.xlsx`
@@ -208,8 +223,14 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "clientname" \
   --checklist-type seo \
   --mode begin \
-  --template "/path/to/blank-seo-template.xlsx" \
   --out-dir "/path/to/client/03_reports"
+```
+
+With no `--template`, Begin mode downloads the canonical template for `--checklist-type`.
+To use an approved alternative version, add either `--template "/path/to/template.xlsx"` or:
+
+```bash
+--template-url "https://github.com/firstpage-seo/onsite-meta-images-extraction-multica/blob/main/template/Onsite%20Checklist%20-%20TEMPLATE%20-%202026.xlsx"
 ```
 
 **Review SEO/GEO from a saved crawl:**
@@ -230,7 +251,6 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "clientname" \
   --checklist-type seo_geo \
   --mode begin \
-  --template "/path/to/attached-template.xlsx" \
   --out-dir "/absolute/path/to/reports"
 ```
 
@@ -241,7 +261,6 @@ python3 <skill-directory>/scripts/onsite_checklist.py \
   --client "clientname" \
   --checklist-type seo \
   --mode begin \
-  --template "/path/to/blank-template.xlsx" \
   --config "/path/to/house.seospiderconfig" \
   --out-dir "/path/to/client/03_reports"
 ```
@@ -262,6 +281,8 @@ Useful flags:
 - `--keep-template-ticks` — leave the template's default `✔` on unverified items (default is to blank them).
 - `--checklist-type seo|seo_geo` — validate and select the checklist family.
 - `--mode begin|review` — select a blank-template build or previous-workbook refresh.
+- `--template <file>` — optional local Begin template; takes precedence over URL download.
+- `--template-url <url>` — optional Begin template override in the approved GitHub repository.
 - `--previous-workbook <file>` — required for Review mode.
 
 After it runs, **read the output file back and verify** the counts match what the script

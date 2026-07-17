@@ -12,7 +12,7 @@ Before calling MCP, opening crawls, searching for exports, or generating a workb
 1. Checklist family: **SEO** or **SEO/GEO**.
 2. Audit mode: **Begin Onsite** or **Review Onsite**.
 3. Base workbook:
-   - Begin requires the matching blank template.
+   - Begin uses the matching canonical template downloaded from the approved GitHub repository.
    - Review requires the previous completed onsite workbook.
 4. Current crawl source: saved crawl, MCP website+sitemap, local website-only crawl, or approved
    exports.
@@ -32,14 +32,23 @@ it.
 Validate the workbook structurally. An SEO/GEO workbook contains `20.3 Image - Next-gen`; an SEO
 workbook does not. Stop on a mismatch.
 
-For Begin, use `--mode begin`, the selected `--checklist-type`, and `--template` pointing to the
-attached blank workbook.
+For Begin, use `--mode begin` and the selected `--checklist-type`. Do not require a blank
+template attachment: when `--template` and `--template-url` are omitted, the script downloads
+the matching canonical template from the approved public GitHub repository. If the user
+attaches a specific blank template, use `--template`; it takes precedence. Use `--template-url`
+only for an approved alternative version in the same repository.
 
 For Review, use `--mode review`, the selected `--checklist-type`, and `--previous-workbook`
 pointing to the attached previous onsite. Never overwrite that workbook.
 
-Multica may omit binary templates from URL-imported skills. Prefer the workbook attached to the
-current task. Do not ask for an absolute user filesystem path when an attachment is available.
+Multica may omit binary templates from URL-imported skills; the Begin-mode download is the
+normal workaround. If the download fails because the runtime has no network access, ask for the
+matching template as a task attachment. Do not ask for an absolute user filesystem path when an
+attachment is available.
+
+The template downloader is intentionally restricted to HTTPS files under
+`firstpage-seo/onsite-meta-images-extraction-multica`. Do not bypass its host/repository,
+file-size, XLSX-signature, checksum, or workbook-structure validation.
 
 ## Route Rules
 
