@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+_sf_exports/
+*.dbseospider
+*.seospider
+# generated deliverables
+Onsite Checklist - *.xlsx
